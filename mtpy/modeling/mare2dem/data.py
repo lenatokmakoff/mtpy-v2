@@ -12,53 +12,45 @@ tokmakol@oregonstate.edu
 # =============================================================================
 # Imports
 # =============================================================================
-import os
+#import os - Don't need?
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import scipy
 
-import mtpy.modeling.occam2d as o2d
+#import mtpy.modeling.occam2d as o2d - might need might not?
 from mtpy.utils import mesh_tools, gis_tools, filehandling
 
+
+
+#Addtl. from modem
+# import numpy as np
+# from pathlib import Path
+# import pandas as pd
+# from loguru import logger
+
+# from mtpy.core.mt_dataframe import MTDataFrame
+# from mtpy.core.mt_location import MTLocation
+# from mtpy.modeling.errors import ModelErrors
+
+
+#Addtl. from occam2d
+# from pathlib import Path
+
+# import numpy as np
+# import pandas as pd
+# from loguru import logger
+
+# from mtpy.core.mt_dataframe import MTDataFrame
+
 # =============================================================================
-class Data:
+
+class Mare2DData: 
     """Data will read and write MARE2DEM data files and convert generated data 
     files to MARE2DEM format.
     """
-
-# =============================================================================
-# Imports
-# =============================================================================
-import numpy as np
-from pathlib import Path
-import pandas as pd
-from loguru import logger
-
-from mtpy.core.mt_dataframe import MTDataFrame
-from mtpy.core.mt_location import MTLocation
-from mtpy.modeling.errors import ModelErrors
-
-
-# =============================================================================
-class Data:
-    """Data will read and write .dat files for ModEM and convert a WS data file
-    to ModEM format.
-
-    ..note: :: the data is interpolated onto the given periods such that all
-               stations invert for the same periods.  The interpolation is
-               a linear interpolation of each of the real and imaginary parts
-               of the impedance tensor and induction tensor.
-               See mtpy.core.mt.MT.interpolate for more details
-    :param **kwargs:
-    :param center_point:
-        Defaults to None.
-    :param dataframe:
-        Defaults to None.
-    :param edi_list: List of edi files to read.
-    """
-
+    
     def __init__(self, dataframe=None, center_point=None, **kwargs):
         self.logger = logger
 

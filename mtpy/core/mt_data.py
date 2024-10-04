@@ -1140,7 +1140,7 @@ class MTData(OrderedDict, MTStations):
         
         """
         
-        return mare2DData(self.to_dataframe(), **kwargs)
+        return Mare2DData(self.to_dataframe(), **kwargs)
 # ===================================================================== LMT Added
 
     def plot_mt_response(

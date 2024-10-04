@@ -27,6 +27,7 @@ from mtpy.modeling.modem import Data
 from mtpy.modeling.occam2d import Occam2DData
 from mtpy.modeling.simpeg.data_2d import Simpeg2DData
 from mtpy.modeling.simpeg.data_3d import Simpeg3DData
+from mtpy.modeling.mare2dem import Mare2DData # =============== LMT Added
 from mtpy.gis.shapefile_creator import ShapefileCreator
 from mtpy.imaging import (
     PlotStations,
@@ -1127,6 +1128,20 @@ class MTData(OrderedDict, MTStations):
         """
 
         return Simpeg3DData(self.to_dataframe(), **kwargs)
+        
+# ===================================================================== LMT Added
+    def to_mare_2d(self, **kwargs):
+        """ Write something useful here?
+
+        kwargs include:
+        - thing 1
+        - thing 2
+        - thing 3
+        
+        """
+        
+        return mare2DData(self.to_dataframe(), **kwargs)
+# ===================================================================== LMT Added
 
     def plot_mt_response(
         self, station_key=None, station_id=None, survey_id=None, **kwargs

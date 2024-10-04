@@ -12,43 +12,21 @@ tokmakol@oregonstate.edu
 # =============================================================================
 # Imports
 # =============================================================================
-#import os - Don't need?
 
 import numpy as np
+from pathlib import Path
 import pandas as pd
-import matplotlib.pyplot as plt
-import scipy
+from loguru import logger
 
-#import mtpy.modeling.occam2d as o2d - might need might not?
-from mtpy.utils import mesh_tools, gis_tools, filehandling
-
-
-
-#Addtl. from modem
-# import numpy as np
-# from pathlib import Path
-# import pandas as pd
-# from loguru import logger
-
-# from mtpy.core.mt_dataframe import MTDataFrame
-# from mtpy.core.mt_location import MTLocation
-# from mtpy.modeling.errors import ModelErrors
-
-
-#Addtl. from occam2d
-# from pathlib import Path
-
-# import numpy as np
-# import pandas as pd
-# from loguru import logger
-
-# from mtpy.core.mt_dataframe import MTDataFrame
+from mtpy.core.mt_dataframe import MTDataFrame
+from mtpy.modeling.mare2dem import Mare2DData
 
 # =============================================================================
 
 class Mare2DData: 
-    """Data will read and write MARE2DEM data files and convert generated data 
-    files to MARE2DEM format.
+    """Mare2DData will read EDI files and convert them to MARE2DEM format.
+    
+    :param edi_list: List of edi files to be converted.
     """
     
     def __init__(self, dataframe=None, center_point=None, **kwargs):
@@ -362,53 +340,7 @@ class Mare2DData:
 
         return h_str
 
-    def _write_header(self, mode):
-        """Write header."""
-        d_lines = []
-        if "impedance" in mode.lower():
-            d_lines.append(
-                self._get_header_string(
-                    self.z_model_error.error_type,
-                    self.z_model_error.error_value,
-                )
-            )
-            d_lines.append(self.header_string)
-            d_lines.append(f"> {mode}")
-            d_lines.append(f"> exp({self.wave_sign_impedance}i\omega t)")
-            d_lines.append(f"> {self.z_units}")
-
-        elif "vertical" in mode.lower():
-            d_lines.append(
-                self._get_header_string(
-                    self.t_model_error.error_type,
-                    self.t_model_error.error_value,
-                )
-            )
-            d_lines.append(self.header_string)
-            d_lines.append(f"> {mode}")
-            d_lines.append(f"> exp({self.wave_sign_tipper}i\omega t)")
-            d_lines.append(f"> [{self.t_units}]")
-
-        d_lines.append(
-            f"> {self.rotation_angle:.3g}"
-        )  # orientation, need to add at some point
-        if self.topography:
-            d_lines.append(
-                f"> {self.center_point.latitude:>10.6f} "
-                f"{self.center_point.longitude:>10.6f} "
-                f"{self.center_point.model_elevation:>10.2f}"
-            )
-        else:
-            d_lines.append(
-                f"> {self.center_point.latitude:>10.6f} "
-                f"{self.center_point.longitude:>10.6f}"
-            )
-
-        n_stations = self.get_n_stations(mode)
-        d_lines.append(f"> {self.n_periods} {n_stations}")
-
-        return d_lines
-
+    
     def _write_comp(self, row, comp):
         """Write a single row.
         :param row: DESCRIPTION.
@@ -620,27 +552,33 @@ def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_name
     ----------
     o2d_filepath : bytes or str
         Full path to the Occam2D data file created from EDI data.
+        
     site_locations : np.ndarray
         Array of shape (nstations). According to the original comments
         in the `EDI2Mare2DEM_withOccam2D_new` script, this is the
         site elevation but in Mare2D coordinates, however it gets set
         as the 'y' component of receiver locations in the Mare2DEM
         data file.
+        
     site_elevations : np.ndarray
         Array of shape (nstations). I think this is the site elevation
         in UTM coordinates. Gets set as the 'z' component of receiver
         locations in the Mare2DEM data file.
+        
     site_names : np.ndarray
         Array of site_names.
+        
     mare_origin : tuple
         Tuple of float (x, y, utm_zone). The Mare2D origin in UTM
         coordinates. Note according to the original script, Mare2D origin
         is the middle of the profile line. utm_zone is the UTM string,
         e.g. '54S'.
+        
     gstrike : int
         The 2D strike, same as
         `geoelectric_strike` in Occam2D model. This information is used
         for the UTM origin line in the data file.
+        
     solve_statics : bool or list, optional
         If boolean, sets whether to solve statics for all stations.
         A list of site names can be passed. Sites in the list will
@@ -648,24 +586,31 @@ def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_name
         are set to False. This writes a '1' or a '0' in
         the Receiver section of the Mare2D data file in the SovleStatics
         column.
+        
     savepath : bytes or str, optional
         Full path of where to save the Mare2D data file. If not
         provided, will be saved as 'Mare2D_data.txt' in working
         directory.
+        
     """
+   
     # Prepare O2D data for data block
     o2d_sites = []
     o2d_freqs = []
     o2d_types = []
     o2d_datums = []
     o2d_errors = []
+    
     with open(o2d_filepath, 'r') as f:
         read_data = f.readlines()
         reading_data = False
+        
         for line in read_data:
+            
             if line.startswith('SITE '):
                 reading_data = True
                 continue
+            
             elif reading_data:
                 parts = line.split()
                 o2d_sites.append(parts[0])
@@ -679,8 +624,10 @@ def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_name
     types = np.array(o2d_types, dtype=np.int8)
     datums = np.array(o2d_datums, dtype=np.float64)
     errors = np.array(o2d_errors, dtype=np.float64)
+    
     # Convert occam2d types to mare2d types
     # The below is: for each element in types array, return corresponding element in conversion
+    
     # dict, if not found in dict return original element
     type_conversion = {1: 123, 2: 104, 3: 133, 4: 134, 5: 125, 6: 106, 9: 103, 10: 105}
     types = np.vectorize(lambda x: type_conversion.get(x, x))(types)
@@ -695,11 +642,13 @@ def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_name
 
     # Prepare data for the Reciever block
     # Zeros of shape (n_sites) for X (as float), Theta, Alpha, Beta and Length (ints) columns
+    
     x_col = np.zeros(site_locations.shape, dtype=np.float64)
     zero_ints = np.zeros(site_locations.shape, dtype=np.int8)
     t_col, a_col, b_col, l_col = zero_ints, zero_ints, zero_ints, zero_ints
     # add 0.1 m (shift the sites 10 cm beneath subsurface as recommended)
     site_elevations += 0.1
+   
     # According to original script, need to reread the Occam2D file to get stations in the correct
     # order
     if isinstance(solve_statics, bool):
@@ -708,11 +657,13 @@ def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_name
         statics = np.zeros(site_locations.shape)
         for sn in solve_statics:
             statics[np.where(site_names == sn)] = 1
+   
     # Put into dataframe for easier stringifying
     recv_df = pd.DataFrame((x_col, site_locations, site_elevations, t_col, a_col, b_col, l_col,
                             statics, site_names)).T
     recv_df.columns = ['X', 'Y', 'Z', 'Theta', 'Alpha', 'Beta', 'Length', 'SolveStatic', 'Name']
     recv_str = list(recv_df.to_string(index=False, float_format=lambda x: '%.6f' % x))
+    
     # Replace the first char of header with Mare2DEM comment symbol '!'
     # This way the header is correct but Pandas handles the alignment and spacing
     recv_str[0] = '!'
@@ -723,6 +674,7 @@ def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_name
 
     if savepath is None:
         savepath = os.path.join(os.getcwd(), 'Mare2D_data.txt')
+   
     with open(savepath, 'w') as output:
         # 1. header
         fstring = 'Format:  EMData_2.2\n'

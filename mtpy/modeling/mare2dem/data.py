@@ -617,7 +617,143 @@ class Data:
                 self.dataframe.loc[
                     find_small.tolist(), f"{comp}_model_error"
                 ] = np.nan
+# # ============================================================================= LMT
+def write_mare2dem_data(o2d_filepath, site_locations, site_elevations, site_names,
+                        mare_origin, utm_zone, gstrike, solve_statics=False, savepath=None):
+    """
+    Uses an Occam2D data file and site locations + elevations to
+    generate a MARE2DEM data file.
 
+    Parameters
+    ----------
+    o2d_filepath : bytes or str
+        Full path to the Occam2D data file created from EDI data.
+    site_locations : np.ndarray
+        Array of shape (nstations). According to the original comments
+        in the `EDI2Mare2DEM_withOccam2D_new` script, this is the
+        site elevation but in Mare2D coordinates, however it gets set
+        as the 'y' component of receiver locations in the Mare2DEM
+        data file.
+    site_elevations : np.ndarray
+        Array of shape (nstations). I think this is the site elevation
+        in UTM coordinates. Gets set as the 'z' component of receiver
+        locations in the Mare2DEM data file.
+    site_names : np.ndarray
+        Array of site_names.
+    mare_origin : tuple
+        Tuple of float (x, y, utm_zone). The Mare2D origin in UTM
+        coordinates. Note according to the original script, Mare2D origin
+        is the middle of the profile line. utm_zone is the UTM string,
+        e.g. '54S'.
+    gstrike : int
+        The 2D strike, same as
+        `geoelectric_strike` in Occam2D model. This information is used
+        for the UTM origin line in the data file.
+    solve_statics : bool or list, optional
+        If boolean, sets whether to solve statics for all stations.
+        A list of site names can be passed. Sites in the list will
+        have solve_statics set to True, any sites not included
+        are set to False. This writes a '1' or a '0' in
+        the Receiver section of the Mare2D data file in the SovleStatics
+        column.
+    savepath : bytes or str, optional
+        Full path of where to save the Mare2D data file. If not
+        provided, will be saved as 'Mare2D_data.txt' in working
+        directory.
+    """
+    # Prepare O2D data for data block
+    o2d_sites = []
+    o2d_freqs = []
+    o2d_types = []
+    o2d_datums = []
+    o2d_errors = []
+    with open(o2d_filepath, 'r') as f:
+        read_data = f.readlines()
+        reading_data = False
+        for line in read_data:
+            if line.startswith('SITE '):
+                reading_data = True
+                continue
+            elif reading_data:
+                parts = line.split()
+                o2d_sites.append(parts[0])
+                o2d_freqs.append(parts[1])
+                o2d_types.append(parts[2])
+                o2d_datums.append(parts[3])
+                o2d_errors.append(parts[4])
+
+    sites = np.array(o2d_sites, dtype=np.int8)
+    freqs = np.array(o2d_freqs, dtype=np.int8)
+    types = np.array(o2d_types, dtype=np.int8)
+    datums = np.array(o2d_datums, dtype=np.float64)
+    errors = np.array(o2d_errors, dtype=np.float64)
+    # Convert occam2d types to mare2d types
+    # The below is: for each element in types array, return corresponding element in conversion
+    # dict, if not found in dict return original element
+    type_conversion = {1: 123, 2: 104, 3: 133, 4: 134, 5: 125, 6: 106, 9: 103, 10: 105}
+    types = np.vectorize(lambda x: type_conversion.get(x, x))(types)
+    # Put into dataframe for easier stringifying
+    # Note: TX# == RX# == site ID for MT stations
+    data_df = pd.DataFrame((types, freqs, sites, sites, datums, errors), dtype=np.object).T
+    # Bit of a hack: add the '!' to the data frame header because the 'type' integer is small
+    # enough that the 'Type' header will have no left whitespace padding, so we can't prepend
+    # it with '!' without throwing off the alignment.
+    data_df.columns = ['! Type', 'Freq #', 'Tx #', 'Rx #', 'Data', 'StdErr']
+    data_str = data_df.to_string(index=False, float_format=lambda x: '%.4f' % x)
+
+    # Prepare data for the Reciever block
+    # Zeros of shape (n_sites) for X (as float), Theta, Alpha, Beta and Length (ints) columns
+    x_col = np.zeros(site_locations.shape, dtype=np.float64)
+    zero_ints = np.zeros(site_locations.shape, dtype=np.int8)
+    t_col, a_col, b_col, l_col = zero_ints, zero_ints, zero_ints, zero_ints
+    # add 0.1 m (shift the sites 10 cm beneath subsurface as recommended)
+    site_elevations += 0.1
+    # According to original script, need to reread the Occam2D file to get stations in the correct
+    # order
+    if isinstance(solve_statics, bool):
+        statics = np.ones(site_locations.shape, dtype=np.int8) if solve_statics else zero_ints
+    else:
+        statics = np.zeros(site_locations.shape)
+        for sn in solve_statics:
+            statics[np.where(site_names == sn)] = 1
+    # Put into dataframe for easier stringifying
+    recv_df = pd.DataFrame((x_col, site_locations, site_elevations, t_col, a_col, b_col, l_col,
+                            statics, site_names)).T
+    recv_df.columns = ['X', 'Y', 'Z', 'Theta', 'Alpha', 'Beta', 'Length', 'SolveStatic', 'Name']
+    recv_str = list(recv_df.to_string(index=False, float_format=lambda x: '%.6f' % x))
+    # Replace the first char of header with Mare2DEM comment symbol '!'
+    # This way the header is correct but Pandas handles the alignment and spacing
+    recv_str[0] = '!'
+    recv_str = "".join(recv_str)
+
+    o2d_data = o2d.Data()
+    o2d_data.read_data_file(o2d_filepath)
+
+    if savepath is None:
+        savepath = os.path.join(os.getcwd(), 'Mare2D_data.txt')
+    with open(savepath, 'w') as output:
+        # 1. header
+        fstring = 'Format:  EMData_2.2\n'
+        fstring += 'UTM of x,y origin (UTM zone, N, E, 2D strike):'
+        gstrike = float(gstrike)
+        fstring += ' {:s}{:>13.1f}{:>13.1f}\t{:f}\n'.format(
+            utm_zone, mare_origin[0], mare_origin[1], gstrike)
+
+        # 2. frequencies
+        fstring += '# MT Frequencies:    {}\n'.format(len(o2d_data.freq))
+        fstring += '\n'.join([str(round(f, 8)) for f in o2d_data.freq])
+
+        # 3. receiver info
+        fstring += '\n# MT Receivers:      {}\n'.format(len(site_names))
+        fstring += recv_str
+        fstring += '\n'
+
+        # 4. data
+        fstring += '# Data:       {}\n'.format(len(datums))
+        fstring += data_str
+
+        output.write(fstring)
+# =============================================================================
     def write_data_file(
         self,
         file_name=None,
